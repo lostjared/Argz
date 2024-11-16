@@ -44,12 +44,20 @@ int main(int argc, char** argv) {
     // Parse arguments
     Argument<std::string> arg;
     try {
-        while (parser.proc(arg) != -1) {
-            std::cout << "Argument: " << arg.arg_name;
-            if (!arg.arg_value.empty()) {
-                std::cout << " Value: " << arg.arg_value;
+        while((value = parser.proc(arg)) != -1) {
+            switch(value) {
+                case 'h':
+                case 'v':
+                    argz.help(std::cout);
+                    exit(EXIT_SUCCESS);
+                    break;
+                case 'f':
+                    in_file = arg.arg_value;
+                    break;
+                case 'o':
+                    out_file = arg.arg_value;
+                    break;
             }
-            std::cout << std::endl;
         }
     } catch (const ArgException<std::string>& e) {
         std::cerr << e.text() << std::endl;
