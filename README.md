@@ -63,6 +63,11 @@ int main(int argc, char** argv) {
         std::cerr << e.text() << std::endl;
     }
 
+    if(in_file.length() == 0) {
+        std::cout << "Error required input...\n";
+        exit(EXIT_FAILURE);
+    }
+
     return 0;
 }
 ```
