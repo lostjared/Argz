@@ -43,6 +43,8 @@ int main(int argc, char** argv) {
     
     // Parse arguments
     Argument<std::string> arg;
+    std::string  in_file, out_file;
+    int value = 0;
     try {
         while((value = parser.proc(arg)) != -1) {
             switch(value) {
