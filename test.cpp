@@ -36,6 +36,7 @@ int main(int argc, char **argv) {
         std::cerr << "Input file must be provided...use -i \n";
         exit(EXIT_FAILURE);
     }
+    std::cout << "i: " << in_file << " O: " <<  out_file << "\n";
     std::cout << "Success..\n";
 	return 0;
 }
