@@ -744,63 +744,54 @@ inline Arguments proc_args(int &argc, char **argv) {
     int camera_index = 0;
     std::string resource;
     std::string resource_path;
-    try {
-        while ((value = parser.proc(arg)) != -1) {
-            switch (value) {
-            case 303:
-                resource_path = arg.arg_value;
-                break;
-            case 302:
-                resource = arg.arg_value;
-                break;
-            case 256:
-                filename = arg.arg_value;
-                break;
-            case 257:
-                texture = arg.arg_value;
-                break;
-            case 'S':
-            case 258:
-                shaderPath = arg.arg_value;
-                break;
-            case 'h':
-            case 'v':
-                parser.help(std::cout);
-                exit(EXIT_SUCCESS);
-                break;
-            case 'p':
-            case 'P':
-                path = arg.arg_value;
-                break;
-            case 'r':
-            case 'R': {
-                auto pos = arg.arg_value.find("x");
-                if (pos == std::string::npos) {
-                    std::cerr << "Error invalid resolution use WidthxHeight\n";
-                    std::cerr.flush();
-                    exit(EXIT_FAILURE);
-                }
-                std::string left, right;
-                left = arg.arg_value.substr(0, pos);
-                right = arg.arg_value.substr(pos + 1);
-                tw = atoi(left.c_str());
-                th = atoi(right.c_str());
-            } break;
-            case 'f':
-            case 'F':
-                fullscreen = true;
-                break;
-            case 300:
-                camera_index = atoi(arg.arg_value.c_str());
+    while ((value = parser.proc(arg)) != -1) {
+        switch (value) {
+        case 303:
+            resource_path = arg.arg_value;
+            break;
+        case 302:
+            resource = arg.arg_value;
+            break;
+        case 256:
+            filename = arg.arg_value;
+            break;
+        case 257:
+            texture = arg.arg_value;
+            break;
+        case 'S':
+        case 258:
+            shaderPath = arg.arg_value;
+            break;
+        case 'h':
+        case 'v':
+            parser.help(std::cout);
+            exit(EXIT_SUCCESS);
+            break;
+        case 'p':
+        case 'P':
+            path = arg.arg_value;
+            break;
+        case 'r':
+        case 'R': {
+            auto pos = arg.arg_value.find("x");
+            if (pos == std::string::npos) {
+                std::cerr << "Error invalid resolution use WidthxHeight\n";
+                std::cerr.flush();
+                exit(EXIT_FAILURE);
             }
+            std::string left, right;
+            left = arg.arg_value.substr(0, pos);
+            right = arg.arg_value.substr(pos + 1);
+            tw = atoi(left.c_str());
+            th = atoi(right.c_str());
+        } break;
+        case 'f':
+        case 'F':
+            fullscreen = true;
+            break;
+        case 300:
+            camera_index = atoi(arg.arg_value.c_str());
         }
-    } catch (const ArgException<std::string> &e) {
-        std::cerr << "mx: Argument Exception" << e.text() << std::endl;
-        args.width = 1280;
-        args.height = 720;
-        args.path = ".";
-        args.fullscreen = false;
-        return args;
     }
     if (path.empty()) {
         std::cerr << "mx: No path provided trying default current directory.\n";
