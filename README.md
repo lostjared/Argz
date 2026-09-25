@@ -1,11 +1,11 @@
 # Argz
-# Command Line Argument Parser (Unicode Support) in C++20
+# Command Line Argument Parser in C++20
 
 ## Overview
 The **Argument Parser** library provides a flexible and robust mechanism for parsing command-line arguments in C++ applications. This library supports both single-character arguments (e.g., `-a`) and double-dash arguments (e.g., `--argument`), with support for Unicode strings and customizable behavior. It is designed to handle complex command-line interfaces efficiently and cleanly.
 
 ## Features
-- **Supports Unicode**: Fully compatible with `std::wstring` for wide-character string handling.
+- **Wide strings**: The parser and help output also support `std::wstring`. Conversion from `char** argv` widens bytes; it does not decode UTF-8.
 - **Single and Double-Dash Arguments**: Easily parse `-a` and `--argument` style options.
 - **Flexible Argument Types**:
   - `ARG_SINGLE`: Single dash arguments (e.g., `-a`).
@@ -17,10 +17,22 @@ The **Argument Parser** library provides a flexible and robust mechanism for par
 
 ## Installation
 
-Include the `argz.hpp` header file in your project and compile it with your application. The library has no additional dependencies outside of the C++ standard library.
+Install with CMake, then link the header-only target:
+
+```sh
+cmake -S . -B build
+cmake --install build --prefix /your/prefix
+```
+
+```cmake
+find_package(Argz 1 CONFIG REQUIRED)
+target_link_libraries(your_app PRIVATE Argz::argz)
+```
+
+The header is installed at `/your/prefix/include/Argz/argz.hpp`. You can also include it directly from the source tree by adding `include` to your compiler's include path.
 
 ```cpp
-#include "argz.hpp"
+#include <Argz/argz.hpp>
 ```
 
 ## Usage
@@ -29,7 +41,8 @@ Include the `argz.hpp` header file in your project and compile it with your appl
 Create an instance of the `Argz` class and initialize it with command-line arguments (`argc` and `argv`).
 
 ```cpp
-#include "argz.hpp"
+#include <Argz/argz.hpp>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 
@@ -38,8 +51,8 @@ int main(int argc, char** argv) {
     
     // Define arguments
     parser.addOptionSingle('h', "Display help message")
-          .addOptionDouble('f', "file", "Specify a file")
-          .addOptionSingleValue('v', "Verbose output")
+          .addOptionDoubleValue('f', "file", "Specify a file")
+          .addOptionSingle('v', "Verbose output")
           .addOptionDoubleValue('o', "output", "Specify output file");
     
     // Parse arguments
@@ -51,7 +64,7 @@ int main(int argc, char** argv) {
             switch(value) {
                 case 'h':
                 case 'v':
-                    argz.help(std::cout);
+                    parser.help(std::cout);
                     exit(EXIT_SUCCESS);
                     break;
                 case 'f':
@@ -104,7 +117,7 @@ try {
 ```
 
 ## Advanced Features
-- **Unicode Support**: Use `std::wstring` with the `Argz` class for wide-character applications.
+- **Wide strings**: Use `std::wstring` with the `Argz` class and pass a `std::wostream` to `help`.
 - **Sorting Help Text**: Automatically organizes arguments for clean and readable help output.
 
 ## Contributing

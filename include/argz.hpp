@@ -21,11 +21,14 @@
  * the options common to all libmx2 applications (-p path, -r resolution, -f fullscreen, …).
  */
 
-#ifndef _ARGZ_HPP_X
-#define _ARGZ_HPP_X
+#ifndef ARGZ_HPP_X
+#define ARGZ_HPP_X
 
 #include <algorithm>
+#include <compare>
+#include <concepts>
 #include <cstdio>
+#include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <iterator>
@@ -111,7 +114,7 @@ struct Argument {
 template <StringType String>
 struct ArgumentData {
     std::vector<String> args; ///< Converted argv entries (argv[1] … argv[argc-1]).
-    int argc;                 ///< Original argc value.
+    int argc = 0;             ///< Original argc value.
     ~ArgumentData() = default;
     ArgumentData() = default;
     ArgumentData(const ArgumentData<String> &a) : args{a.args}, argc{a.argc} {}
@@ -170,7 +173,7 @@ class Argz {
      * @param argv Argument vector from main().
      */
     Argz(int argc, char **argv) { initArgs(argc, argv); }
-    Argz(const Argz<String> &a) : arg_data{a.arg_data}, arg_info{a.arg_info}, index{a.index}, cindex{a.cindex} {}
+    Argz(const Argz<String> &a) : arg_data{a.arg_data}, arg_info{a.arg_info}, index{a.index}, cindex{a.cindex}, end_of_options{a.end_of_options} {}
 
     Argz<String> &operator=(const Argz<String> &a) {
         if (this == &a) {
@@ -180,10 +183,11 @@ class Argz {
         arg_info = a.arg_info;
         index = a.index;
         cindex = a.cindex;
+        end_of_options = a.end_of_options;
         return *this;
     }
 
-    Argz(Argz<String> &&a) : arg_data{std::move(a.arg_data)}, arg_info{std::move(a.arg_info)}, index{a.index}, cindex{a.cindex} {}
+    Argz(Argz<String> &&a) : arg_data{std::move(a.arg_data)}, arg_info{std::move(a.arg_info)}, index{a.index}, cindex{a.cindex}, end_of_options{a.end_of_options} {}
 
     Argz<String> &operator=(Argz<String> &&a) {
         if (this == &a) {
@@ -193,6 +197,7 @@ class Argz {
         arg_info = std::move(a.arg_info);
         index = a.index;
         cindex = a.cindex;
+        end_of_options = a.end_of_options;
         return *this;
     }
 
@@ -238,6 +243,7 @@ class Argz {
     void reset() {
         index = 0;
         cindex = 1;
+        end_of_options = false;
     }
 
     /**
@@ -311,7 +317,7 @@ class Argz {
      */
     int lookUpCode(const String &value) const {
         for (const auto &i : arg_info) {
-            if (i.second.arg_name == value) {
+            if ((i.second.arg_type == ArgType::ARG_DOUBLE || i.second.arg_type == ArgType::ARG_DOUBLE_VALUE) && i.second.arg_name == value) {
                 return i.second.arg_letter;
             }
         }
@@ -325,139 +331,67 @@ class Argz {
      * @throws ArgException<String> On unrecognised options or missing values.
      */
     int proc(Argument<String> &a) {
-        if (index < static_cast<int>(arg_data.args.size())) {
-            const String &type{arg_data.args[index]};
-            if (type.length() > 2 && type[0] == '-' && type[1] == '-') {
-                String name{};
-                String inline_value{};
-                const auto eq_pos = type.find(static_cast<typename String::value_type>('='));
-                const bool has_inline_value = (eq_pos != String::npos);
-                for (size_t z = 2; z < type.length(); ++z)
-                    if (!has_inline_value || z < eq_pos) {
-                        name += type[z];
-                    } else if (z > eq_pos) {
-                        inline_value += type[z];
-                    }
-                int code = lookUpCode(name);
-                if (code != -1) {
-                    auto pos = arg_info.find(code);
-                    if (pos != arg_info.end()) {
-                        if (pos->second.arg_type == ArgType::ARG_DOUBLE) {
-                            if (has_inline_value) {
-                                if constexpr (std::is_same<typename String::value_type, char>::value) {
-                                    throw ArgException<String>("Invalid switch not found!");
-                                }
-                                if constexpr (std::is_same<typename String::value_type, wchar_t>::value) {
-                                    throw ArgException<String>(L"Invalid switch not found!");
-                                }
-                            }
-                            a = pos->second;
-                            a.arg_name = name;
-                            index++;
-                            return code;
-                        } else {
-                            a = pos->second;
-                            a.arg_name = name;
-                            if (has_inline_value) {
-                                if (inline_value.empty()) {
-                                    if constexpr (std::is_same<typename String::value_type, char>::value) {
-                                        throw ArgException<String>("Expected Value");
-                                    }
-                                    if constexpr (std::is_same<typename String::value_type, wchar_t>::value) {
-                                        throw ArgException<String>(L"Expected Value");
-                                    }
-                                }
-                                a.arg_value = inline_value;
-                                index++;
-                                return code;
-                            }
-                            if (++index < static_cast<int>(arg_data.args.size())) {
-                                const String &s{arg_data.args[index]};
-                                if (canUseAsOptionValue(s)) {
-                                    a.arg_name = name;
-                                    a.arg_value = s;
-                                    index++;
-                                    return code;
-                                }
-                            }
-                            if constexpr (std::is_same<typename String::value_type, char>::value) {
-                                throw ArgException<String>("Expected Value");
-                            }
-                            if constexpr (std::is_same<typename String::value_type, wchar_t>::value) {
-                                throw ArgException<String>(L"Expected Value");
-                            }
-                        }
-                    }
-                } else {
-                    throwUnknownOption(type);
-                }
-            } else if (type.length() == 1 && type[0] == '-') {
-                if constexpr (std::is_same<typename String::value_type, char>::value) {
-                    throw ArgException<String>("Expected Value found -");
-                }
-                if constexpr (std::is_same<typename String::value_type, wchar_t>::value) {
-                    throw ArgException<String>(L"Expected Value found -");
-                }
-            } else if (type.length() > 1 && (type[0] == '-')) {
-                const int c{type[cindex]};
-                const auto pos{arg_info.find(c)};
-                cindex++;
-                if (cindex >= static_cast<int>(type.length())) {
-                    cindex = 1;
-                    index++;
-                }
-                String name_val{};
-                name_val += static_cast<typename String::value_type>(c);
-                if (pos != arg_info.end()) {
-                    if (pos->second.arg_type == ArgType::ARG_SINGLE) {
-                        a = pos->second;
-                        a.arg_name = name_val;
-                        return c;
-                    } else if (pos->second.arg_type == ArgType::ARG_SINGLE_VALUE) {
-                        if (index < static_cast<int>(arg_data.args.size())) {
-                            const String &s{arg_data.args[index]};
-                            if (!canUseAsOptionValue(s)) {
-                                if constexpr (std::is_same<typename String::value_type, char>::value) {
-                                    throw ArgException<String>("Expected Value found -");
-                                }
-                                if constexpr (std::is_same<typename String::value_type, wchar_t>::value) {
-                                    throw ArgException<String>(L"Expected Value found -");
-                                }
-                            }
-                            if (s.length() > 0) {
-                                a = pos->second;
-                                a.arg_value = s;
-                                a.arg_name = name_val;
-                                index++;
-                                return c;
-                            }
-                        } else {
-                            if constexpr (std::is_same<typename String::value_type, char>::value) {
-                                throw ArgException<String>("Expected Value");
-                            }
-                            if constexpr (std::is_same<typename String::value_type, wchar_t>::value) {
-                                throw ArgException<String>(L"Expected Value");
-                            }
-                        }
-                    } else {
-                        if constexpr (std::is_same<typename String::value_type, char>::value) {
-                            throw ArgException<String>("Invalid switch not found!");
-                        }
-                        if constexpr (std::is_same<typename String::value_type, wchar_t>::value) {
-                            throw ArgException<String>(L"Invalid switch not found!");
-                        }
-                    }
-                } else {
-                    throwUnknownOption(type);
-                }
-            } else {
-                a = Argument<String>();
-                a.arg_name = String{};
+        using Char = typename String::value_type;
+        while (index < static_cast<int>(arg_data.args.size())) {
+            const String &token = arg_data.args[index];
+            if (!end_of_options && token == String(2, static_cast<Char>('-'))) {
+                end_of_options = true;
+                ++index;
+                continue;
+            }
+            if (end_of_options || token.size() < 2 || token[0] != static_cast<Char>('-')) {
+                a = Argument<String>{};
                 a.arg_type = ArgType::ARG_NONE;
-                a.arg_name = a.arg_value = arg_data.args.at(index);
-                index++;
+                a.arg_name = a.arg_value = token;
+                ++index;
                 return '-';
             }
+            if (token[1] == static_cast<Char>('-')) {
+                const auto eq = token.find(static_cast<Char>('='), 2);
+                const String name = token.substr(2, eq == String::npos ? String::npos : eq - 2);
+                const int code = lookUpCode(name);
+                if (code == -1) {
+                    throwUnknownOption(token);
+                }
+                const auto &option = arg_info.at(code);
+                if (option.arg_type == ArgType::ARG_DOUBLE && eq != String::npos) {
+                    throwInvalidValue();
+                }
+                a = option;
+                a.arg_name = name;
+                if (option.arg_type == ArgType::ARG_DOUBLE_VALUE) {
+                    if (eq != String::npos) {
+                        a.arg_value = token.substr(eq + 1);
+                        if (a.arg_value.empty()) throwMissingValue();
+                        ++index;
+                    } else {
+                        a.arg_value = nextValue();
+                    }
+                } else {
+                    ++index;
+                }
+                return code;
+            }
+            const int code = static_cast<int>(token[cindex]);
+            const auto it = arg_info.find(code);
+            if (it == arg_info.end() || (it->second.arg_type != ArgType::ARG_SINGLE && it->second.arg_type != ArgType::ARG_SINGLE_VALUE)) {
+                throwUnknownOption(token);
+            }
+            a = it->second;
+            a.arg_name = String(1, token[cindex]);
+            if (a.arg_type == ArgType::ARG_SINGLE_VALUE) {
+                if (cindex + 1 < static_cast<int>(token.size())) {
+                    a.arg_value = token.substr(cindex + 1);
+                    ++index;
+                } else {
+                    a.arg_value = nextValue();
+                }
+                cindex = 1;
+            } else if (++cindex >= static_cast<int>(token.size())) {
+                cindex = 1;
+                ++index;
+            }
+            return code;
         }
         return -1;
     }
@@ -535,11 +469,11 @@ class Argz {
             write_ansi("\x1b[90m");
             cout << row.desc;
             write_ansi("\x1b[0m");
-            cout << '\n';
+            cout << static_cast<char_type>('\n');
         }
     }
     /** @return Number of argv entries consumed so far. */
-    const size_t count() const { return index; }
+    size_t count() const { return static_cast<size_t>(index); }
 
   protected:
     ArgumentData<String> arg_data;
@@ -642,41 +576,28 @@ class Argz {
         return has_digit;
     }
 
-    bool isRecognizedOptionToken(const String &s) const {
-        if (s.length() <= 1 || s[0] != static_cast<typename String::value_type>('-')) {
-            return false;
+    String nextValue() {
+        if (index + 1 >= static_cast<int>(arg_data.args.size())) throwMissingValue();
+        const String &value = arg_data.args[index + 1];
+        if (value.empty() || (value[0] == static_cast<typename String::value_type>('-') && !isSignedNumericToken(value))) {
+            throwMissingValue();
         }
-
-        if (s.length() > 2 && s[1] == static_cast<typename String::value_type>('-')) {
-            String name{};
-            for (size_t z = 2; z < s.length(); ++z) {
-                name += s[z];
-            }
-            return lookUpCode(name) != -1;
-        }
-
-        for (size_t z = 1; z < s.length(); ++z) {
-            if (arg_info.find(static_cast<int>(s[z])) == arg_info.end()) {
-                return false;
-            }
-        }
-        return true;
+        index += 2;
+        return value;
     }
 
-    bool canUseAsOptionValue(const String &s) const {
-        if (s.empty()) {
-            return false;
-        }
-        if (s[0] != static_cast<typename String::value_type>('-')) {
-            return true;
-        }
-        if (isSignedNumericToken(s)) {
-            return true;
-        }
-        return !isRecognizedOptionToken(s);
+    [[noreturn]] static void throwMissingValue() {
+        if constexpr (std::is_same_v<typename String::value_type, char>) throw ArgException<String>("Expected Value");
+        else throw ArgException<String>(L"Expected Value");
+    }
+
+    [[noreturn]] static void throwInvalidValue() {
+        if constexpr (std::is_same_v<typename String::value_type, char>) throw ArgException<String>("Option does not take a value");
+        else throw ArgException<String>(L"Option does not take a value");
     }
 
     int index = 0, cindex = 1;
+    bool end_of_options = false;
 };
 
 /**
@@ -712,7 +633,8 @@ struct Arguments {
  *
  * @param argc Reference to argc from main().
  * @param argv argv from main().
- * @return Populated Arguments struct; on parse error, returns a default-valued struct.
+ * @return Populated Arguments struct.
+ * @throws ArgException<std::string> On invalid command-line options.
  */
 inline Arguments proc_args(int &argc, char **argv) {
     Arguments args;

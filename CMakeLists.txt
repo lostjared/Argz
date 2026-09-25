@@ -1,13 +1,31 @@
-cmake_minimum_required(VERSION 3.10)
-project(argz_project)
-set(VERSION_MAJOR 1)
-set(VERSION_MINOR 0)
-set(VERSION_PATCH 0)
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED True)
+cmake_minimum_required(VERSION 3.16)
+project(Argz VERSION 1.0.0 LANGUAGES CXX)
+
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
 add_library(argz INTERFACE)
-set(ARGZ_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_include_directories(argz INTERFACE ${ARGZ_INCLUDE_DIR})
-install(FILES ${ARGZ_INCLUDE_DIR}/argz.hpp DESTINATION include)
-add_executable(test_program test.cpp)
-target_link_libraries(test_program PRIVATE argz)
+add_library(Argz::argz ALIAS argz)
+target_compile_features(argz INTERFACE cxx_std_20)
+target_include_directories(argz INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+
+install(FILES include/argz.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/Argz)
+install(TARGETS argz EXPORT ArgzTargets)
+set(ARGZ_CMAKE_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/Argz)
+install(EXPORT ArgzTargets NAMESPACE Argz:: DESTINATION ${ARGZ_CMAKE_DIR})
+configure_package_config_file(cmake/ArgzConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/ArgzConfig.cmake
+    INSTALL_DESTINATION ${ARGZ_CMAKE_DIR})
+write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/ArgzConfigVersion.cmake
+    VERSION ${PROJECT_VERSION} COMPATIBILITY SameMajorVersion)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ArgzConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/ArgzConfigVersion.cmake DESTINATION ${ARGZ_CMAKE_DIR})
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(argz_tests test.cpp)
+    target_link_libraries(argz_tests PRIVATE Argz::argz)
+    add_test(NAME argz_tests COMMAND argz_tests)
+endif()

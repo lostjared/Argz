@@ -1,42 +1,67 @@
-#include"argz.hpp"
+#include "argz.hpp"
 
+#include <cassert>
+#include <sstream>
 
-int main(int argc, char **argv) {
-    Argz<std::string> argz(argc, argv);
-    argz.addOptionSingleValue('i', "input text")
-    .addOptionDoubleValue('I', "input", "input file")
-    .addOptionSingleValue('o', "output file")
-    .addOptionDoubleValue('O', "output", "output file")
-    .addOptionSingle('h', "help")
-    .addOptionSingle('v', "help");
-    std::string in_file, out_file;
-    int value = 0;
+int main() {
+    char program[] = "argz";
+    char flags[] = "-ab";
+    char short_value[] = "-ooutput.txt";
+    char long_value[] = "--input=file.txt";
+    char negative[] = "-2";
+    char separator[] = "--";
+    char positional[] = "--literal";
+    char *argv[] = {program, flags, short_value, long_value, separator, negative, positional};
+    Argz<std::string> parser(7, argv);
+    parser.addOptionSingle('a', "first")
+        .addOptionSingle('b', "second")
+        .addOptionSingleValue('o', "output")
+        .addOptionDoubleValue('i', "input", "input")
+        .addOptionSingleValue('n', "number");
+    assert(parser.lookUpCode("") == -1);
+
     Argument<std::string> arg;
-    try {
-        while((value = argz.proc(arg)) != -1) {
-            switch(value) {
-                case 'h':
-                case 'v':
-                    argz.help(std::cout);
-                    exit(EXIT_SUCCESS);
-                    break;
-                case 'i':
-                    in_file = arg.arg_value;
-                    break;
-                case 'o':
-                    out_file = arg.arg_value;
-                    break;
-            }
-        }
-    } catch(const ArgException<std::string> &e) {
-        std::cerr << "Syntax Error: " << e.text() << "\n";
-    }
+    assert(parser.proc(arg) == 'a' && arg.arg_name == "a");
+    assert(parser.proc(arg) == 'b' && arg.arg_name == "b");
+    assert(parser.proc(arg) == 'o' && arg.arg_value == "output.txt");
+    assert(parser.proc(arg) == 'i' && arg.arg_value == "file.txt");
+    assert(parser.proc(arg) == '-' && arg.arg_value == "-2");
+    assert(parser.proc(arg) == '-' && arg.arg_value == "--literal");
+    assert(parser.proc(arg) == -1);
+    parser.reset();
+    assert(parser.proc(arg) == 'a');
 
-    if(in_file.length() == 0) {
-        std::cerr << "Input file must be provided...use -i \n";
-        exit(EXIT_FAILURE);
-    }
-    std::cout << "i: " << in_file << " O: " <<  out_file << "\n";
-    std::cout << "Success..\n";
-	return 0;
+    char missing[] = "--input";
+    char next_option[] = "-a";
+    char *missing_argv[] = {program, missing, next_option};
+    parser.initArgs(3, missing_argv);
+    try {
+        parser.proc(arg);
+        assert(false);
+    } catch (const ArgException<std::string> &) {}
+    assert(parser.count() == 0);
+
+    char number[] = "-n";
+    char number_value[] = "-2.5";
+    char *number_argv[] = {program, number, number_value};
+    parser.initArgs(3, number_argv);
+    assert(parser.proc(arg) == 'n' && arg.arg_value == "-2.5");
+
+    char unknown[] = "--unknown";
+    char *unknown_argv[] = {program, unknown};
+    parser.initArgs(2, unknown_argv);
+    try {
+        parser.proc(arg);
+        assert(false);
+    } catch (const ArgException<std::string> &) {}
+
+    std::ostringstream help;
+    parser.help(help);
+    assert(help.str().find("--input") != std::string::npos);
+
+    Argz<std::wstring> wide;
+    wide.addOptionDoubleValue('x', L"example", L"description");
+    std::wostringstream wide_help;
+    wide.help(wide_help);
+    assert(wide_help.str().find(L"--example") != std::wstring::npos);
 }
