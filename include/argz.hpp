@@ -67,13 +67,7 @@ concept StringType = std::is_class_v<T> && requires(T type) {
 };
 
 /** @brief Discriminator for option kind used inside Argument. */
-enum class ArgType {
-    ARG_SINGLE,
-    ARG_SINGLE_VALUE,
-    ARG_DOUBLE,
-    ARG_DOUBLE_VALUE,
-    ARG_NONE
-};
+enum class ArgType { ARG_SINGLE, ARG_SINGLE_VALUE, ARG_DOUBLE, ARG_DOUBLE_VALUE, ARG_NONE };
 
 /**
  * @struct Argument
@@ -81,11 +75,10 @@ enum class ArgType {
  * @tparam String String type satisfying StringType.
  *
  * After a successful call to Argz::proc() the member @c arg_letter holds the
- * matched code (or @c '-' for bare positional arguments) and @c arg_value holds
+ * matched option code (or zero for positional arguments) and @c arg_value holds
  * any associated value string.
  */
-template <StringType String>
-struct Argument {
+template <StringType String> struct Argument {
     String arg_name;  ///< Long option name (e.g. @c "output").
     int arg_letter;   ///< Short option code (e.g. @c 'o') or unique integer for long-only options.
     String arg_value; ///< Value string supplied after the option, if any.
@@ -111,8 +104,7 @@ struct Argument {
  * @brief Holds the raw @c argv strings converted to the target @c String type.
  * @tparam String String type satisfying StringType.
  */
-template <StringType String>
-struct ArgumentData {
+template <StringType String> struct ArgumentData {
     std::vector<String> args; ///< Converted argv entries (argv[1] … argv[argc-1]).
     int argc = 0;             ///< Original argc value.
     ~ArgumentData() = default;
@@ -142,8 +134,7 @@ struct ArgumentData {
  * @brief Exception thrown by Argz::proc() on unrecognised or malformed options.
  * @tparam String String type satisfying StringType.
  */
-template <StringType String>
-class ArgException {
+template <StringType String> class ArgException {
   public:
     ArgException() = default;
     ArgException(const String &s) : value{s} {}
@@ -161,8 +152,7 @@ class ArgException {
  * Options are registered with addOption*() before parsing.
  * Call proc() in a loop until it returns @c -1 to iterate over all arguments.
  */
-template <StringType String>
-class Argz {
+template <StringType String> class Argz {
   public:
     ~Argz() = default;
     Argz() = default;
@@ -208,33 +198,30 @@ class Argz {
      * @return Reference to @c *this for method chaining.
      */
     Argz<String> &initArgs(int argc, char **argv) {
-        arg_data.argc = argc;
-        arg_data.args.clear();
+        ArgumentData<String> data;
+        data.argc = argc;
         if (argc > 1) {
-            arg_data.args.reserve(static_cast<size_t>(argc - 1));
+            data.args.reserve(static_cast<size_t>(argc - 1));
         }
         if constexpr (std::is_same<typename String::value_type, char>::value) {
             for (int i = 1; i < argc; ++i) {
                 const char *a = (argv != nullptr) ? argv[i] : nullptr;
-                arg_data.args.emplace_back(a != nullptr ? a : "");
+                data.args.emplace_back(a != nullptr ? a : "");
             }
-            reset();
-            return *this;
         }
         if constexpr (std::is_same<typename String::value_type, wchar_t>::value) {
             for (int i = 1; i < argc; ++i) {
                 const char *a = (argv != nullptr) ? argv[i] : nullptr;
-                String data;
+                String converted;
                 if (a != nullptr) {
                     for (size_t z = 0; a[z] != 0; ++z) {
-                        data += static_cast<typename String::value_type>(a[z]);
+                        converted += static_cast<typename String::value_type>(a[z]);
                     }
                 }
-                arg_data.args.push_back(data);
+                data.args.push_back(std::move(converted));
             }
-            reset();
-            return *this;
         }
+        arg_data = std::move(data);
         reset();
         return *this;
     }
@@ -329,6 +316,7 @@ class Argz {
      * @param a Output: filled with the matched option details.
      * @return The option code on success; @c '-' for a positional argument; @c -1 when exhausted.
      * @throws ArgException<String> On unrecognised options or missing values.
+     *         The output argument and cursor remain unchanged on these errors.
      */
     int proc(Argument<String> &a) {
         using Char = typename String::value_type;
@@ -357,19 +345,21 @@ class Argz {
                 if (option.arg_type == ArgType::ARG_DOUBLE && eq != String::npos) {
                     throwInvalidValue();
                 }
-                a = option;
-                a.arg_name = name;
+                Argument<String> parsed = option;
+                parsed.arg_name = name;
+                int consumed = 1;
                 if (option.arg_type == ArgType::ARG_DOUBLE_VALUE) {
                     if (eq != String::npos) {
-                        a.arg_value = token.substr(eq + 1);
-                        if (a.arg_value.empty()) throwMissingValue();
-                        ++index;
+                        parsed.arg_value = token.substr(eq + 1);
+                        if (parsed.arg_value.empty())
+                            throwMissingValue();
                     } else {
-                        a.arg_value = nextValue();
+                        parsed.arg_value = nextValue();
+                        consumed = 2;
                     }
-                } else {
-                    ++index;
                 }
+                a = parsed;
+                index += consumed;
                 return code;
             }
             const int code = static_cast<int>(token[cindex]);
@@ -377,20 +367,26 @@ class Argz {
             if (it == arg_info.end() || (it->second.arg_type != ArgType::ARG_SINGLE && it->second.arg_type != ArgType::ARG_SINGLE_VALUE)) {
                 throwUnknownOption(token);
             }
-            a = it->second;
-            a.arg_name = String(1, token[cindex]);
-            if (a.arg_type == ArgType::ARG_SINGLE_VALUE) {
-                if (cindex + 1 < static_cast<int>(token.size())) {
-                    a.arg_value = token.substr(cindex + 1);
-                    ++index;
+            Argument<String> parsed = it->second;
+            parsed.arg_name = String(1, token[cindex]);
+            int consumed = 0;
+            int next_cindex = cindex + 1;
+            if (parsed.arg_type == ArgType::ARG_SINGLE_VALUE) {
+                if (next_cindex < static_cast<int>(token.size())) {
+                    parsed.arg_value = token.substr(next_cindex);
+                    consumed = 1;
                 } else {
-                    a.arg_value = nextValue();
+                    parsed.arg_value = nextValue();
+                    consumed = 2;
                 }
-                cindex = 1;
-            } else if (++cindex >= static_cast<int>(token.size())) {
-                cindex = 1;
-                ++index;
+                next_cindex = 1;
+            } else if (next_cindex >= static_cast<int>(token.size())) {
+                next_cindex = 1;
+                consumed = 1;
             }
+            a = parsed;
+            index += consumed;
+            cindex = next_cindex;
             return code;
         }
         return -1;
@@ -401,8 +397,7 @@ class Argz {
      * @tparam T Output stream type (e.g. @c std::ostream, @c std::wostream).
      * @param cout Destination stream.
      */
-    template <typename T>
-    void help(T &cout) {
+    template <typename T> void help(T &cout) {
         using char_type = typename std::decay<decltype(*std::declval<T>().rdbuf())>::type::char_type;
         const bool use_color = supportsColor(cout);
         auto write_ansi = [&](const char *seq) {
@@ -480,8 +475,7 @@ class Argz {
     std::unordered_map<int, Argument<String>> arg_info;
 
   private:
-    template <typename Stream>
-    static bool supportsColor(const Stream &stream) {
+    template <typename Stream> static bool supportsColor(const Stream &stream) {
         if constexpr (std::is_same_v<Stream, std::ostream>) {
             if (&stream != &std::cout) {
                 return false;
@@ -576,24 +570,28 @@ class Argz {
         return has_digit;
     }
 
-    String nextValue() {
-        if (index + 1 >= static_cast<int>(arg_data.args.size())) throwMissingValue();
+    String nextValue() const {
+        if (index + 1 >= static_cast<int>(arg_data.args.size()))
+            throwMissingValue();
         const String &value = arg_data.args[index + 1];
         if (value.empty() || (value[0] == static_cast<typename String::value_type>('-') && !isSignedNumericToken(value))) {
             throwMissingValue();
         }
-        index += 2;
         return value;
     }
 
     [[noreturn]] static void throwMissingValue() {
-        if constexpr (std::is_same_v<typename String::value_type, char>) throw ArgException<String>("Expected Value");
-        else throw ArgException<String>(L"Expected Value");
+        if constexpr (std::is_same_v<typename String::value_type, char>)
+            throw ArgException<String>("Expected Value");
+        else
+            throw ArgException<String>(L"Expected Value");
     }
 
     [[noreturn]] static void throwInvalidValue() {
-        if constexpr (std::is_same_v<typename String::value_type, char>) throw ArgException<String>("Option does not take a value");
-        else throw ArgException<String>(L"Option does not take a value");
+        if constexpr (std::is_same_v<typename String::value_type, char>)
+            throw ArgException<String>("Option does not take a value");
+        else
+            throw ArgException<String>(L"Option does not take a value");
     }
 
     int index = 0, cindex = 1;
@@ -639,21 +637,7 @@ struct Arguments {
 inline Arguments proc_args(int &argc, char **argv) {
     Arguments args;
     Argz<std::string> parser(argc, argv);
-    parser.addOptionSingle('h', "Display help message")
-        .addOptionSingle('v', "Print version")
-        .addOptionSingleValue('p', "assets path")
-        .addOptionDoubleValue('P', "path", "assets path")
-        .addOptionSingleValue('r', "Resolution WidthxHeight")
-        .addOptionDoubleValue('R', "resolution", "Resolution WidthxHeight")
-        .addOptionSingle('f', "fullscreen")
-        .addOptionDouble('F', "fullscreen", "fullscreen")
-        .addOptionDoubleValue(256, "filename", "input filename")
-        .addOptionDoubleValue(302, "resource", "resource file")
-        .addOptionDoubleValue(303, "resource_path", "resource data path")
-        .addOptionDoubleValue(257, "texture", "texture file (.png or .tex)")
-        .addOptionSingleValue('S', "shader SPV folder path (contains index.txt)")
-        .addOptionDoubleValue(258, "shader-path", "shader SPV folder path (contains index.txt)")
-        .addOptionDoubleValue(300, "camera", "camera index");
+    parser.addOptionSingle('h', "Display help message").addOptionSingle('v', "Print version").addOptionSingleValue('p', "assets path").addOptionDoubleValue('P', "path", "assets path").addOptionSingleValue('r', "Resolution WidthxHeight").addOptionDoubleValue('R', "resolution", "Resolution WidthxHeight").addOptionSingle('f', "fullscreen").addOptionDouble('F', "fullscreen", "fullscreen").addOptionDoubleValue(256, "filename", "input filename").addOptionDoubleValue(302, "resource", "resource file").addOptionDoubleValue(303, "resource_path", "resource data path").addOptionDoubleValue(257, "texture", "texture file (.png or .tex)").addOptionSingleValue('S', "shader SPV folder path (contains index.txt)").addOptionDoubleValue(258, "shader-path", "shader SPV folder path (contains index.txt)").addOptionDoubleValue(300, "camera", "camera index");
 
     Argument<std::string> arg;
     std::string path;

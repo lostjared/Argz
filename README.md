@@ -98,6 +98,16 @@ Define the expected arguments using the `addOption` methods:
 ### 3. Processing Arguments
 Use the `proc` method in a loop to process each command-line argument. This method populates an `Argument` object with the parsed argument name, value, and type.
 
+Supported forms include clustered flags (`-abc`), attached short values (`-ofile.txt`), and long values separated by a space or `=` (`--output=file.txt`). A value-taking short option consumes the rest of its cluster as its value.
+
+Use `--` to treat all remaining tokens as positional arguments. Positional arguments return `'-'` from `proc`, set `arg_type` to `ARG_NONE`, and put the token in both `arg_name` and `arg_value`; their `arg_letter` remains zero for compatibility.
+
+Separate values must be nonempty and must not start with `-`, except for signed decimal numbers such as `-2.5` or `-1e-3`. Use an attached value for a filename starting with `-`, for example `--output=-report.txt`. Empty attached long values are also rejected.
+
+On an `ArgException`, `proc` preserves the previous output argument and parse cursor. Calling it again retries the same option. `reset()` restarts parsing with the registered options intact; `initArgs(argc, argv)` replaces the input and resets parsing, also retaining registrations. If input conversion or allocation fails during `initArgs`, the previous input and cursor are retained.
+
+`count()` reports consumed argv tokens, excluding the program name. It does not advance for each flag within a cluster, and includes the `--` separator once consumed.
+
 ### 4. Generating Help Text
 Call the `help` method to output a list of available arguments and their descriptions.
 
@@ -119,6 +129,16 @@ try {
 ## Advanced Features
 - **Wide strings**: Use `std::wstring` with the `Argz` class and pass a `std::wostream` to `help`.
 - **Sorting Help Text**: Automatically organizes arguments for clean and readable help output.
+
+## Testing
+
+```sh
+cmake -S . -B build -DBUILD_TESTING=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+Checks remain enabled in Release builds and cover narrow and wide strings, parsing errors, cursor state, copying and moving parsers, help output, and the common `proc_args` options.
 
 ## Contributing
 Contributions are welcome! Please open an issue or submit a pull request if you have suggestions for improvements or new features.
